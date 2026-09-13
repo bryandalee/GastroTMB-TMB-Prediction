@@ -1,0 +1,19 @@
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Ngrok — download terpisah dari ngrok.com, jangan commit ke repo
+ngrok.exe
+ngrok
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Model artifacts (kalau suatu saat disimpan sebagai file)
+*.pkl
