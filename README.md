@@ -10,7 +10,7 @@ Proyek ini dikerjakan untuk tugas **Project CompBio** oleh **Kelompok 8**.
 
 ## ✨ Fitur Utama
 
-- Prediksi status **TMB-High / TMB-Low** dari status mutasi 10 gen: `TTN`, `TP53`, `MUC16`, `ARID1A`, `LRP1B`, `SYNE1`, `FLG`, `FAT4`, `CSMD3`, `PCLO`
+- Prediksi status **TMB-High / TMB-Low** dari status mutasi 10 gen: `TTN`, `TP53`, `MUC16`, `ARID1A`, `LRP1B`, `SYNE1`, `FLG`, `FAT4`, `APC`, `KRAS`
 - Model **Random Forest** dilatih otomatis dari data mentah setiap kali server dijalankan (tidak perlu file model terpisah)
 - Menampilkan tingkat keyakinan (confidence) prediksi beserta probabilitas TMB-High vs TMB-Low
 - Menunjukkan kontribusi tiap gen yang bermutasi terhadap hasil prediksi (feature importance)
