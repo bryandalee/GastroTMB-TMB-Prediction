@@ -1,53 +1,30 @@
 import os
 import pandas as pd
-import numpy as np
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-from sklearn.ensemble import RandomForestClassifier
+from model import TMB_THRESHOLD, train_and_evaluate, print_report
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 app  = Flask(__name__, static_folder=BASE)
 CORS(app)
 
-TMB_THRESHOLD = 10.0
-
 # =======================================================
-# TRAINING LANGSUNG SAAT SERVER START
-# Tidak ada file model.pkl — model dilatih dari CSV (~1 detik)
+# TRAINING + EVALUASI LANGSUNG SAAT SERVER START
+# Tidak ada file model.pkl — model dilatih dari CSV (~5 detik)
+# Model dilatih di data latih (80%) dan dievaluasi di data uji (20%),
+# detailnya ada di model.py
 # =======================================================
-print("Memuat data dan melatih model...")
+print("Memuat data, melatih, dan mengevaluasi model...")
 
-clinical = pd.read_csv(os.path.join(BASE, 'combined_study_clinical_data.tsv'), sep='\t')
-mut      = pd.read_csv(os.path.join(BASE, 'mutations_gabungan.txt'), sep='\t')
+RESULT = train_and_evaluate()
+print_report(RESULT)
 
-GENE_COLUMNS = list(mut.columns[2:])
+model              = RESULT['model']
+GENE_COLUMNS       = RESULT['gene_columns']
+FEATURE_IMPORTANCE = RESULT['feature_importance']
 
-mut_bin = mut.copy()
-mut_bin[GENE_COLUMNS] = mut[GENE_COLUMNS].map(
-    lambda x: 0 if str(x).upper() == 'WT' else 1
-)
-
-merged = mut_bin.merge(
-    clinical[['Sample ID', 'Study ID', 'TMB (nonsynonymous)']],
-    left_on=['SAMPLE_ID', 'STUDY_ID'],
-    right_on=['Sample ID', 'Study ID'],
-    how='inner'
-).dropna(subset=['TMB (nonsynonymous)'])
-
-merged['TMB_LABEL'] = (merged['TMB (nonsynonymous)'] >= TMB_THRESHOLD).astype(int)
-
-X_train = merged[GENE_COLUMNS]
-y_train = merged['TMB_LABEL']
-
-model = RandomForestClassifier(n_estimators=100, random_state=42)
-model.fit(X_train, y_train)
-
-FEATURE_IMPORTANCE = dict(zip(GENE_COLUMNS, model.feature_importances_.tolist()))
-N_SAMPLES = len(merged)
-N_HIGH    = int(y_train.sum())
-N_LOW     = int((y_train == 0).sum())
-
-print(f"Model siap. {N_SAMPLES} pasien | TMB-High: {N_HIGH} | TMB-Low: {N_LOW}")
+print(f"Model siap. {RESULT['n_samples']} pasien | "
+      f"latih: {RESULT['n_train']} | uji: {RESULT['n_test']}")
 print(f"Buka browser: http://localhost:5050")
 
 # =======================================================
@@ -65,10 +42,16 @@ def info():
     return jsonify({
         'genes'              : GENE_COLUMNS,
         'tmb_threshold'      : TMB_THRESHOLD,
-        'n_samples'          : N_SAMPLES,
-        'n_high'             : N_HIGH,
-        'n_low'              : N_LOW,
-        'feature_importance' : FEATURE_IMPORTANCE
+        'n_samples'          : RESULT['n_samples'],
+        'n_high'             : RESULT['n_high'],
+        'n_low'              : RESULT['n_low'],
+        'n_train'            : RESULT['n_train'],
+        'n_test'             : RESULT['n_test'],
+        'n_test_high'        : RESULT['n_test_high'],
+        'feature_importance' : FEATURE_IMPORTANCE,
+        'test_metrics'       : RESULT['test_metrics'],
+        'cv_metrics'         : RESULT['cv_metrics'],
+        'baseline'           : RESULT['baseline']
     })
 
 

@@ -29,28 +29,48 @@ Proyek ini dikerjakan untuk tugas **Project CompBio** oleh **Kelompok 8**.
 - **Seleksi fitur:** 10 gen dipilih berdasarkan frekuensi mutasi tertinggi pada kohort TCGA Gastric Cancer (STAD) menurut publikasi PMC (2021)
 - **Threshold TMB-High:** ≥ 10 mutasi/Mb — mengikuti standar yang dipakai FDA saat menyetujui pembrolizumab untuk tumor solid TMB-tinggi (studi KEYNOTE-158)
 - **Kenapa Random Forest?** Efektif menangani data genomik berdimensi tinggi (banyak fitur/gen dibanding jumlah sampel), tahan terhadap outlier, dan memberi *feature importance* untuk melihat gen mana yang paling berpengaruh
-- **Alur kerja:** Data TCGA/cBioPortal (klinis + mutasi) → encoding & labeling (TMB ≥ 10 mut/Mb) → training model (split 80/20) → evaluasi
+- **Penanganan data timpang:** hanya ~15% pasien TMB-High, jadi model dilatih dengan `class_weight='balanced'` supaya tidak cenderung menebak "Low" terus
+- **Alur kerja:** Data TCGA/cBioPortal (klinis + mutasi) → encoding & labeling (TMB ≥ 10 mut/Mb) → split stratified 80/20 → pemilihan hyperparameter lewat 5-fold cross-validation di data latih → evaluasi di data uji
 
 ## 📊 Hasil Evaluasi Model
 
-Dievaluasi pada test set (20% data, di luar data training):
+Data dibagi **80% data latih (619 pasien) / 20% data uji (155 pasien)** secara stratified (`random_state=42`). Data uji disisihkan di awal dan tidak dipakai saat training maupun pemilihan hyperparameter. Seluruh proses ada di `model.py`; laporan lengkapnya bisa dilihat tanpa menyalakan server:
+
+    python model.py
+
+Hasil di data uji:
 
 | Kelas | Precision | Recall | F1-score | Support |
 |---|---|---|---|---|
-| TMB-Low | 0.93 | 0.95 | 0.94 | 132 |
-| TMB-High | 0.68 | 0.57 | 0.62 | 23 |
-| **Akurasi keseluruhan** | | | **0.90** | 155 |
-| Macro avg | 0.81 | 0.76 | 0.78 | 155 |
-| Weighted avg | 0.89 | 0.90 | 0.89 | 155 |
+| TMB-Low | 0.95 | 0.88 | 0.91 | 132 |
+| TMB-High | 0.52 | 0.74 | 0.61 | 23 |
+| **Akurasi keseluruhan** | | | **0.86** | 155 |
+| Macro avg | 0.73 | 0.81 | 0.76 | 155 |
+| Weighted avg | 0.89 | 0.86 | 0.87 | 155 |
 
 **Confusion Matrix:**
 
 | | Prediksi Low | Prediksi High |
 |---|---|---|
-| **Aktual Low** | 126 | 6 |
-| **Aktual High** | 10 | 13 |
+| **Aktual Low** | 116 | 16 |
+| **Aktual High** | 6 | 17 |
 
-Model lebih kuat mendeteksi kelas TMB-Low dibanding TMB-High — wajar mengingat jumlah sampel TMB-High jauh lebih sedikit (23 dari 155 data test).
+**Dibanding baseline.** Karena datanya timpang, akurasi saja menyesatkan: menebak "Low" untuk semua pasien sudah memberi akurasi 85,2% tanpa menemukan satu pun pasien TMB-High. Jadi model dinilai dengan metrik yang peka terhadap kelas minoritas:
+
+| Metrik | Model | Baseline (selalu tebak "Low") |
+|---|---|---|
+| Akurasi | 85,8% | 85,2% |
+| Balanced accuracy | 80,9% | 50,0% |
+| Sensitivitas (recall TMB-High) | 73,9% | 0,0% |
+| Spesifisitas | 87,9% | 100,0% |
+| ROC-AUC | 0,931 | 0,500 |
+| PR-AUC | 0,757 | 0,148 |
+
+Model sengaja diarahkan untuk menangkap sebanyak mungkin pasien TMB-High (17 dari 23), dengan konsekuensi lebih banyak salah alarm (16 pasien Low diprediksi High). Untuk alat skrining awal ini dianggap lebih aman, karena hasil "High" tetap dikonfirmasi dengan sequencing, sedangkan pasien High yang terlewat bisa kehilangan kesempatan imunoterapi.
+
+Cross-validation 5-fold di data latih (mean ± std): ROC-AUC 0,964 ± 0,005 · balanced accuracy 0,884 ± 0,030 · sensitivitas 0,889 ± 0,061 · presisi 0,563 ± 0,064.
+
+Catatan: data uji hanya memuat 23 pasien TMB-High, jadi angka sensitivitas dan presisi masih bisa bergeser beberapa poin kalau pembagian datanya berbeda.
 
 ## ⚠️ Limitasi & Potensi Pengembangan
 
@@ -138,12 +158,13 @@ Proyek ini dibuat untuk tujuan pembelajaran/akademis. Prediksi dan rekomendasi t
 ## Struktur File
     gastrotmb/
     ├── index.html                        — antarmuka web
-    ├── app.py                            — backend Flask (training otomatis dari CSV)
+    ├── app.py                            — backend Flask (API + serve halaman web)
+    ├── model.py                          — split train/test, training, dan evaluasi model
     ├── requirements.txt                  — daftar library Python
     ├── mutations_gabungan.txt            — data mutasi (dari cBioPortal)
     └── combined_study_clinical_data.tsv  — data klinis TMB (dari cBioPortal)
 
-Tidak ada file model.pkl — model dilatih langsung dari CSV saat server start (~1 detik).
+Tidak ada file model.pkl — model dilatih dan dievaluasi langsung dari CSV saat server start (~5 detik).
 
 ---
 

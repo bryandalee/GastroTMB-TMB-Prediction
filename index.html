@@ -255,6 +255,14 @@
   }
   .disclaimer strong { font-weight: 600; }
 
+  /* ── EVALUATION ── */
+  .eval-base { font-size: 10px; color: var(--text3); font-weight: 400; margin-left: 6px; }
+  .cm-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 12px; }
+  .cm-table th, .cm-table td { border: 1px solid var(--border); padding: 6px 8px; text-align: center; }
+  .cm-table th { background: var(--surface2); font-weight: 500; font-size: 11px; color: var(--text2); }
+  .cm-table td { font-family: var(--mono); font-weight: 500; }
+  .eval-note { font-size: 11px; color: var(--text3); line-height: 1.5; margin-top: 10px; }
+
   /* ── EMPTY STATE ── */
   .empty-state {
     padding: 40px 20px; text-align: center; color: var(--text3);
@@ -306,7 +314,7 @@
 <div class="container">
   <div class="page-title" id="pg-title">Prediksi Tumor Mutational Burden (TMB)</div>
   <div class="page-desc" id="pg-desc">
-    Masukkan status mutasi gen untuk setiap gen. Sistem akan memprediksi profil TMB pasien dan memberikan rekomendasi penanganan medis berbasis model Random Forest yang dilatih dari 774 pasien.
+    Masukkan status mutasi gen untuk setiap gen. Sistem akan memprediksi profil TMB pasien dan memberikan rekomendasi penanganan medis berbasis model Random Forest yang dilatih dan diuji pada 774 pasien.
   </div>
 
   <div class="layout">
@@ -428,6 +436,10 @@
             <span class="info-val" id="info-ntrain">—</span>
           </div>
           <div class="info-row">
+            <span class="info-key" id="lbl-ntest">Data Uji</span>
+            <span class="info-val" id="info-ntest">—</span>
+          </div>
+          <div class="info-row">
             <span class="info-key" id="lbl-threshold">Threshold TMB</span>
             <span class="info-val">≥ 10 mut/Mb</span>
           </div>
@@ -445,6 +457,61 @@
         </div>
       </div>
 
+      <!-- EVALUATION CARD -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title" id="lbl-eval">Evaluasi Model (Data Uji)</span>
+        </div>
+        <div class="card-body" style="padding:16px 20px">
+          <div class="info-row">
+            <span class="info-key" id="lbl-acc">Akurasi</span>
+            <span class="info-val" id="eval-acc">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key" id="lbl-balacc">Balanced Accuracy</span>
+            <span class="info-val" id="eval-balacc">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key" id="lbl-sens">Sensitivitas (TMB-High)</span>
+            <span class="info-val" id="eval-sens">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key" id="lbl-spec">Spesifisitas (TMB-Low)</span>
+            <span class="info-val" id="eval-spec">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key" id="lbl-prec">Presisi (TMB-High)</span>
+            <span class="info-val" id="eval-prec">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">F1-score</span>
+            <span class="info-val" id="eval-f1">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">ROC-AUC</span>
+            <span class="info-val" id="eval-auc">—</span>
+          </div>
+          <table class="cm-table">
+            <tr>
+              <th></th>
+              <th id="lbl-cm-plow">Prediksi Low</th>
+              <th id="lbl-cm-phigh">Prediksi High</th>
+            </tr>
+            <tr>
+              <th id="lbl-cm-alow">Aktual Low</th>
+              <td id="cm-tn">—</td>
+              <td id="cm-fp">—</td>
+            </tr>
+            <tr>
+              <th id="lbl-cm-ahigh">Aktual High</th>
+              <td id="cm-fn">—</td>
+              <td id="cm-tp">—</td>
+            </tr>
+          </table>
+          <div class="eval-note" id="eval-note"></div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -455,13 +522,15 @@ const API = '/api';
 let lang = 'id';
 let geneImportance = {};
 let geneColumns    = [];
+let modelInfo      = null;   // respons /api/info; null = backend tidak tersambung
+let infoLoaded     = false;
 
 // ── TRANSLATIONS ────────────────────────────────────────
 const T = {
   id: {
     logoSub:        'Prediksi TMB Kanker Lambung',
     pgTitle:        'Prediksi Tumor Mutational Burden (TMB)',
-    pgDesc:         'Masukkan status mutasi gen untuk setiap gen. Sistem akan memprediksi profil TMB pasien dan memberikan rekomendasi penanganan medis berbasis model Random Forest yang dilatih dari 774 pasien.',
+    pgDesc:         'Masukkan status mutasi gen untuk setiap gen. Sistem akan memprediksi profil TMB pasien dan memberikan rekomendasi penanganan medis berbasis model Random Forest yang dilatih dan diuji pada 774 pasien.',
     lblInput:       'Data Mutasi Gen Pasien',
     lblHint:        'WT = normal, kode mutasi = bermutasi',
     lblResult:      'Hasil Prediksi',
@@ -478,9 +547,24 @@ const T = {
     lblModel:       'Informasi Model',
     lblAlgo:        'Algoritma',
     lblNtrain:      'Data Latih',
+    lblNtest:       'Data Uji',
     lblThreshold:   'Threshold TMB',
     lblSource:      'Sumber Data',
     lblStudies:     'Study',
+    lblEval:        'Evaluasi Model (Data Uji)',
+    lblAcc:         'Akurasi',
+    lblBalAcc:      'Balanced Accuracy',
+    lblSens:        'Sensitivitas (TMB-High)',
+    lblSpec:        'Spesifisitas (TMB-Low)',
+    lblPrec:        'Presisi (TMB-High)',
+    lblCmPLow:      'Prediksi Low',
+    lblCmPHigh:     'Prediksi High',
+    lblCmALow:      'Aktual Low',
+    lblCmAHigh:     'Aktual High',
+    patients:       'pasien',
+    baseline:       'baseline',
+    evalNote:       (n, h) => `Diukur pada ${n} pasien data uji (${h} TMB-High) yang tidak dipakai saat training. Baseline = selalu menebak TMB-Low.`,
+    evalOffline:    'Backend tidak tersambung — hasil evaluasi tidak tersedia.',
     disclaimer:     '<strong>Disclaimer:</strong> Sistem ini bersifat pendukung keputusan klinis dan tidak menggantikan diagnosis dokter atau ahli patologi. Konfirmasi dengan sequencing panel TMB standar tetap disarankan.',
     highMain:       'TMB-High — Beban Mutasi Tinggi',
     highSub:        'Nilai TMB pasien diprediksi \u2265 10 mutasi/Mb',
@@ -497,7 +581,7 @@ const T = {
   en: {
     logoSub:        'Gastric Cancer TMB Predictor',
     pgTitle:        'Tumor Mutational Burden (TMB) Prediction',
-    pgDesc:         'Enter mutation status for each gene. The system will predict the patient\'s TMB profile and provide treatment recommendations based on a Random Forest model trained on 774 patients.',
+    pgDesc:         'Enter mutation status for each gene. The system will predict the patient\'s TMB profile and provide treatment recommendations based on a Random Forest model trained and tested on 774 patients.',
     lblInput:       'Patient Gene Mutation Data',
     lblHint:        'WT = normal, mutation code = mutated',
     lblResult:      'Prediction Result',
@@ -514,9 +598,24 @@ const T = {
     lblModel:       'Model Information',
     lblAlgo:        'Algorithm',
     lblNtrain:      'Training Data',
+    lblNtest:       'Test Data',
     lblThreshold:   'TMB Threshold',
     lblSource:      'Data Source',
     lblStudies:     'Studies',
+    lblEval:        'Model Evaluation (Test Data)',
+    lblAcc:         'Accuracy',
+    lblBalAcc:      'Balanced Accuracy',
+    lblSens:        'Sensitivity (TMB-High)',
+    lblSpec:        'Specificity (TMB-Low)',
+    lblPrec:        'Precision (TMB-High)',
+    lblCmPLow:      'Predicted Low',
+    lblCmPHigh:     'Predicted High',
+    lblCmALow:      'Actual Low',
+    lblCmAHigh:     'Actual High',
+    patients:       'patients',
+    baseline:       'baseline',
+    evalNote:       (n, h) => `Measured on ${n} held-out test patients (${h} TMB-High) never used in training. Baseline = always predicting TMB-Low.`,
+    evalOffline:    'Backend not connected — evaluation results unavailable.',
     disclaimer:     '<strong>Disclaimer:</strong> This system is a clinical decision support tool and does not replace diagnosis by a physician or pathologist. Confirmation with standard TMB sequencing panel is still recommended.',
     highMain:       'TMB-High — High Mutational Burden',
     highSub:        'Patient TMB predicted \u2265 10 mutations/Mb',
@@ -555,9 +654,20 @@ function applyLang() {
     'lbl-model':        'lblModel',
     'lbl-algo':         'lblAlgo',
     'lbl-ntrain':       'lblNtrain',
+    'lbl-ntest':        'lblNtest',
     'lbl-threshold':    'lblThreshold',
     'lbl-source':       'lblSource',
     'lbl-studies':      'lblStudies',
+    'lbl-eval':         'lblEval',
+    'lbl-acc':          'lblAcc',
+    'lbl-balacc':       'lblBalAcc',
+    'lbl-sens':         'lblSens',
+    'lbl-spec':         'lblSpec',
+    'lbl-prec':         'lblPrec',
+    'lbl-cm-plow':      'lblCmPLow',
+    'lbl-cm-phigh':     'lblCmPHigh',
+    'lbl-cm-alow':      'lblCmALow',
+    'lbl-cm-ahigh':     'lblCmAHigh',
     'disclaimer-text':  'disclaimer',
     'lang-toggle':      null,
   };
@@ -570,6 +680,7 @@ function applyLang() {
   }
   // Update mut tags
   document.querySelectorAll('.mut-tag').forEach(el => el.textContent = t('mutTag'));
+  if (infoLoaded) renderModelInfo();
 }
 
 function toggleLang() {
@@ -584,15 +695,48 @@ async function loadInfo() {
     const d = await r.json();
     geneColumns   = d.genes;
     geneImportance = d.feature_importance;
-    document.getElementById('info-ntrain').textContent = `${d.n_samples} pasien`;
+    modelInfo      = d;
     buildGeneGrid();
   } catch(e) {
     // Demo mode: use hardcoded gene list
     geneColumns    = ['TP53','TTN','MUC16','ARID1A','LRP1B','SYNE1','FLG','FAT4','APC','KRAS'];
     geneImportance = {TP53:.077,TTN:.113,MUC16:.084,ARID1A:.270,LRP1B:.062,SYNE1:.126,FLG:.051,FAT4:.107,APC:.048,KRAS:.062};
-    document.getElementById('info-ntrain').textContent = '774 pasien';
+    modelInfo      = null;
     buildGeneGrid();
   }
+  infoLoaded = true;
+  renderModelInfo();
+}
+
+// Isi kartu Informasi Model + Evaluasi Model dari /api/info
+function renderModelInfo() {
+  const set = (id, html) => { document.getElementById(id).innerHTML = html; };
+  const d   = modelInfo;
+
+  if (!d || !d.test_metrics) {
+    set('eval-note', t('evalOffline'));
+    return;
+  }
+
+  const m   = d.test_metrics, b = d.baseline, cm = m.confusion_matrix;
+  const pct = v => (v * 100).toFixed(1) + '%';
+  const vsBase = (v, bv) => `${pct(v)}<span class="eval-base">${t('baseline')} ${pct(bv)}</span>`;
+
+  set('info-ntrain', `${d.n_train} ${t('patients')}`);
+  set('info-ntest',  `${d.n_test} ${t('patients')}`);
+
+  set('eval-acc',    vsBase(m.accuracy, b.accuracy));
+  set('eval-balacc', vsBase(m.balanced_accuracy, b.balanced_accuracy));
+  set('eval-sens',   vsBase(m.sensitivity, b.sensitivity));
+  set('eval-spec',   pct(m.specificity));
+  set('eval-prec',   pct(m.precision));
+  set('eval-f1',     m.f1.toFixed(3));
+  set('eval-auc',    m.roc_auc.toFixed(3));
+
+  set('cm-tn', cm.tn); set('cm-fp', cm.fp);
+  set('cm-fn', cm.fn); set('cm-tp', cm.tp);
+
+  set('eval-note', t('evalNote')(d.n_test, d.n_test_high));
 }
 
 function buildGeneGrid() {
